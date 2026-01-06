@@ -1,30 +1,18 @@
-[supported]: https://img.shields.io/badge/-supported-green "supported"
+# 1、选择开发板
+![alt text](image-1.png)
 
-| Chip     | ESP-IDF v5.3           | ESP-IDF v5.4           |
-|----------|------------------------|------------------------|
-| ESP32-S3 | ![alt text][supported] | ![alt text][supported] |
-| ESP32-P4 | ![alt text][supported] | ![alt text][supported] |
+# 2、选择摄像头
 
-# Human Face Detect Example
+![alt text](image.png)
 
-A simple image inference example. See full example in [esp-who](https://github.com/espressif/esp-who/tree/master/examples/object_detect).
-
-## Quick start
-
-Follow the [quick start](https://docs.espressif.com/projects/esp-dl/en/latest/getting_started/readme.html#quick-start) to flash the example, you will see the output in idf monitor:
+# 3、修改摄像头相关配置
+屏蔽![alt text](image-2.png)
 
 ```
-I (955) human_face_detect: [score: 0.936285, x1: 100, y1: 64, x2: 193, y2: 191]
-I (955) human_face_detect: left_eye: [117, 114], left_mouth: [120, 160], nose: [132, 143], right_eye: [157, 112], right_mouth: [151, 160]]
+    ESP_RETURN_ON_ERROR(i2c_master_get_bus_handle(0, &s_i2cbus_handle), TAG, "Failed to get I2C bus handle");
+    ESP_LOGI(TAG, "successd to initialize i2c bus!");
 ```
 
-## Configurable Options in Menuconfig
+![alt text](image-3.png)
 
-### Component configuration
-We provide the models as components, each of them has some configurable options. See [Human Face Detect Model](https://github.com/espressif/esp-dl/blob/master/models/human_face_detect/README.md)。
-
-### Project configuration
-
-- CONFIG_PARTITION_TABLE_CUSTOM_FILENAME
-
-If model location is set to FLASH partition, please set this option to `partitions2.csv`
+修改![alt text](image-4.png)

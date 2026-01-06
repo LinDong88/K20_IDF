@@ -344,8 +344,8 @@ size_t frame_buffer_size = 0;
 static lv_img_dsc_t img_dsc;
 static lv_obj_t *lv_img = NULL;
 
-#define DISP_HRES 380
-#define DISP_VRES 700
+#define DISP_HRES 400
+#define DISP_VRES 400
 
 static usb_msc_storage_t msc_ctrl;
 
@@ -367,6 +367,12 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Initializing board");
     ESP_UTILS_CHECK_FALSE_EXIT(board->init(), "Board init failed");
     ESP_UTILS_CHECK_FALSE_EXIT(board->begin(), "Board begin failed");
+
+    auto backlight = board->getBacklight();
+    if (backlight) {
+        backlight->setBrightness(20); //背光
+    }
+
 
     ESP_LOGI(TAG, "Initializing LVGL");
     ESP_UTILS_CHECK_FALSE_EXIT(lvgl_port_init(board->getLCD(), board->getTouch()), "LVGL init failed");
@@ -397,8 +403,8 @@ extern "C" void app_main(void)
     // 预计算裁剪参数
     const int cam_width = msc_ctrl.um_fb.width;   // 800
     const int cam_height = msc_ctrl.um_fb.height; // 800
-    const int disp_width = DISP_HRES;             // 480
-    const int disp_height = DISP_VRES;            // 800
+    const int disp_width = DISP_HRES;             // 380
+    const int disp_height = DISP_VRES;            // 700
     
     // 计算中心裁剪的起始位置
     const int crop_x = (cam_width - disp_width) / 2;  // 160
@@ -415,18 +421,30 @@ extern "C" void app_main(void)
             uint16_t *src = (uint16_t*)fb->buf;
             uint16_t *dst = (uint16_t*)frame_buffer;
             
-            // 优化的裁剪拷贝：直接按行拷贝
-            for (int y = 0; y < disp_height; y++) {
-                uint16_t *src_ptr = src + (crop_y + y) * cam_width + crop_x;
-                uint16_t *dst_ptr = dst + y * disp_width;
+            const int src_width = cam_width;    // 800
+            const int src_height = cam_height;  // 800
+            const int dst_width = DISP_HRES;    // 400
+            const int dst_height = DISP_VRES;   // 400
+            
+            // 预计算缩放因子，使用定点运算避免浮点运算
+            const int scale_x_fixed = (src_width << 16) / dst_width;  // x方向缩放因子(定点)
+            const int scale_y_fixed = (src_height << 16) / dst_height; // y方向缩放因子(定点)
+            
+            for (int y = 0; y < dst_height; y++) {
+                // 计算当前行对应的源图像y坐标
+                int src_y = (y * scale_y_fixed) >> 16;
+                uint16_t *src_row = src + src_y * src_width;  // 指向源图像对应行
+                uint16_t *dst_row = dst + y * dst_width;      // 指向目标图像对应行
                 
-                // 使用单次memcpy操作拷贝整行
-                memcpy(dst_ptr, src_ptr, disp_width * sizeof(uint16_t));
+                for (int x = 0; x < dst_width; x++) {
+                    // 计算当前像素对应的源图像x坐标
+                    int src_x = (x * scale_x_fixed) >> 16;
+                    dst_row[x] = src_row[src_x];
+                }
             }
             
             // 更新LVGL图像显示
             lv_img_set_src(lv_img, &img_dsc);
-            // lv_task_handler();
         }
         
         // 归还帧缓冲区给摄像头驱动

@@ -1,0 +1,25 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/esp32_p4_function_ev_board_noglib:
+    version: "^4.0.1"
+    rules:
+     - if: "target == esp32p4"
+  espressif/esp32_s3_eye_noglib:
+    version: "^3.1.0~1"
+    rules:
+     - if: "target == esp32s3"
+
+
+  espressif/esp_video:
+    version: "*"
+
+  lvgl/lvgl:
+    version: "^8"
+  example_video_common:
+    path: "../managed_components/espressif__esp_video/examples/common_components/example_video_common"
+
+
+  ESP32_Display_Panel:
+    git: https://github.com/cdjq/ESP32_Display_Panel.git
+  # ESP32_Display_Panel:
+  #   path: ../managed_components/ESP32_Display_Panel

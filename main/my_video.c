@@ -1,0 +1,180 @@
+
+// #include <string.h>
+// #include "esp_log.h"
+// #include "esp_check.h"
+// #include "example_video_common.h"
+// #include "esp_cam_sensor_xclk.h"
+// #include "my_video.h"
+
+
+
+
+// static const char *TAG = "video";
+// static i2c_master_bus_handle_t s_i2cbus_handle;
+// static bool s_is_init = false;
+// // static const char *TAG = "example_init_video";
+
+// static const esp_video_init_csi_config_t s_csi_config = {
+//     .sccb_config = {
+// #if !CONFIG_EXAMPLE_SCCB_I2C_INIT_BY_APP
+//         .init_sccb = true,
+//         .i2c_config = {
+//             .port      = EXAMPLE_MIPI_CSI_SCCB_I2C_PORT,
+//             .scl_pin   = EXAMPLE_MIPI_CSI_SCCB_I2C_SCL_PIN,
+//             .sda_pin   = EXAMPLE_MIPI_CSI_SCCB_I2C_SDA_PIN,
+//         },
+// #endif /* !CONFIG_EXAMPLE_SCCB_I2C_INIT_BY_APP */
+//         .freq = EXAMPLE_MIPI_CSI_SCCB_I2C_FREQ,
+//     },
+//     // .reset_pin = EXAMPLE_MIPI_CSI_CAM_SENSOR_RESET_PIN,
+//     // .pwdn_pin  = EXAMPLE_MIPI_CSI_CAM_SENSOR_PWDN_PIN,
+// #if CONFIG_EXAMPLE_MIPI_CSI_VIDEO_DEVICE_DONT_INIT_LDO
+//     .dont_init_ldo = true,
+// #endif /* CONFIG_EXAMPLE_MIPI_CSI_VIDEO_DEVICE_DONT_INIT_LDO */
+// };
+
+// static const esp_video_init_config_t s_cam_config = {
+// #if EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR
+//     .csi      = &s_csi_config,
+// #if EXAMPLE_ENABLE_MIPI_CSI_CAM_MOTOR
+//     .cam_motor = &s_cam_motor_config,
+// #endif /* EXAMPLE_ENABLE_MIPI_CSI_CAM_MOTOR */
+// #endif /* EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR */
+// #if EXAMPLE_ENABLE_DVP_CAM_SENSOR
+//     .dvp      = &s_dvp_config,
+// #endif /* EXAMPLE_ENABLE_DVP_CAM_SENSOR */
+// #if EXAMPLE_ENABLE_SPI_CAM_SENSOR
+//     .spi      = s_spi_config,
+// #endif /* EXAMPLE_ENABLE_SPI_CAM_SENSOR */
+// #if EXAMPLE_ENABLE_USB_UVC_CAM_SENSOR
+//     .usb_uvc  = &s_usb_uvc_config,
+// #endif /* EXAMPLE_ENABLE_USB_UVC_CAM_SENSOR */
+// };
+// esp_err_t my_video_init(void)
+// {
+//        esp_err_t ret;
+
+//     if (s_is_init) {
+//         return ESP_OK;
+//     }
+
+//     const esp_video_init_config_t *cam_config_ptr = &s_cam_config;
+
+// #if CONFIG_EXAMPLE_SCCB_I2C_INIT_BY_APP
+//     // ESP_RETURN_ON_ERROR(i2c_new_master_bus(&s_bus_config, &s_i2cbus_handle), TAG, "failed to initialize i2c bus");
+//     ESP_RETURN_ON_ERROR(i2c_master_get_bus_handle(0, &s_i2cbus_handle), TAG, "Failed to get I2C bus handle");
+//     ESP_LOGI(TAG, "successd to initialize i2c bus!");
+    
+// #if EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR
+//     esp_video_init_csi_config_t csi_config = s_csi_config;
+//     csi_config.sccb_config.init_sccb = false;
+//     csi_config.sccb_config.i2c_handle = s_i2cbus_handle;
+
+// #if EXAMPLE_ENABLE_MIPI_CSI_CAM_MOTOR
+//     esp_video_init_cam_motor_config_t cam_motor_config = s_cam_motor_config;
+//     cam_motor_config.sccb_config.init_sccb = false;
+//     cam_motor_config.sccb_config.i2c_handle = s_i2cbus_handle;
+// #endif /* EXAMPLE_ENABLE_MIPI_CSI_CAM_MOTOR */
+// #endif /* EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR */
+// #if EXAMPLE_ENABLE_DVP_CAM_SENSOR
+//     esp_video_init_dvp_config_t dvp_config = s_dvp_config;
+//     dvp_config.sccb_config.init_sccb = false;
+//     dvp_config.sccb_config.i2c_handle = s_i2cbus_handle;
+// #endif /* EXAMPLE_ENABLE_DVP_CAM_SENSOR */
+// #if EXAMPLE_ENABLE_SPI_CAM_0_SENSOR
+//     esp_video_init_spi_config_t spi_config[ESP_VIDEO_SPI_DEVICE_NUM];
+
+//     memcpy(spi_config, s_spi_config, sizeof(esp_video_init_spi_config_t) * ESP_VIDEO_SPI_DEVICE_NUM);
+//     for (int i = 0; i < ESP_VIDEO_SPI_DEVICE_NUM; i++) {
+//         spi_config[i].sccb_config.init_sccb = false;
+//         spi_config[i].sccb_config.i2c_handle = s_i2cbus_handle;
+//     }
+// #endif /* EXAMPLE_ENABLE_SPI_CAM_0_SENSOR */
+
+//     esp_video_init_config_t cam_config = {
+// #if EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR
+//         .csi      = &csi_config,
+// #if EXAMPLE_ENABLE_MIPI_CSI_CAM_MOTOR
+//         .cam_motor = &cam_motor_config,
+// #endif /* EXAMPLE_ENABLE_MIPI_CSI_CAM_MOTOR */
+// #endif /* EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR */
+// #if EXAMPLE_ENABLE_DVP_CAM_SENSOR
+//         .dvp      = &dvp_config,
+// #endif /* EXAMPLE_ENABLE_DVP_CAM_SENSOR */
+// #if EXAMPLE_ENABLE_SPI_CAM_SENSOR
+//         .spi      = spi_config,
+// #endif /* EXAMPLE_ENABLE_SPI_CAM_SENSOR */
+// #if EXAMPLE_ENABLE_USB_UVC_CAM_SENSOR
+//         .usb_uvc  = &s_usb_uvc_config,
+// #endif /* EXAMPLE_ENABLE_USB_UVC_CAM_SENSOR */
+//     };
+
+//     cam_config_ptr = &cam_config;
+// #endif /* CONFIG_EXAMPLE_SCCB_I2C_INIT_BY_APP */
+
+// #if defined(EXAMPLE_MIPI_CSI_XCLK_PIN) && EXAMPLE_MIPI_CSI_XCLK_PIN > 0
+//     esp_cam_sensor_xclk_config_t cam_xclk_config = {
+//         .esp_clock_router_cfg = {
+//             .xclk_pin = EXAMPLE_MIPI_CSI_XCLK_PIN,
+//             .xclk_freq_hz = EXAMPLE_MIPI_CSI_XCLK_FREQ,
+//         }
+//     };
+
+//     ESP_LOGI(TAG, "MIPI-CSI xclk pin=%d, freq=%d", EXAMPLE_MIPI_CSI_XCLK_PIN, EXAMPLE_MIPI_CSI_XCLK_FREQ);
+
+//     ESP_GOTO_ON_ERROR(esp_cam_sensor_xclk_allocate(ESP_CAM_SENSOR_XCLK_ESP_CLOCK_ROUTER, &s_xclk_handle), failed_0, TAG, "failed to allocate xclk");
+//     ESP_GOTO_ON_ERROR(esp_cam_sensor_xclk_start(s_xclk_handle, &cam_xclk_config), failed_1, TAG, "failed to start xclk");
+// #endif /* defined(EXAMPLE_MIPI_CSI_XCLK_PIN) && EXAMPLE_MIPI_CSI_XCLK_PIN > 0 */
+
+// #if EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR
+//     ESP_LOGI(TAG, "MIPI-CSI camera sensor I2C port=%d, scl_pin=%d, sda_pin=%d, freq=%d",
+//              EXAMPLE_MIPI_CSI_SCCB_I2C_PORT,
+//              EXAMPLE_MIPI_CSI_SCCB_I2C_SCL_PIN,
+//              EXAMPLE_MIPI_CSI_SCCB_I2C_SDA_PIN,
+//              EXAMPLE_MIPI_CSI_SCCB_I2C_FREQ);
+// #endif /* EXAMPLE_ENABLE_MIPI_CSI_CAM_SENSOR */
+
+// #if EXAMPLE_ENABLE_DVP_CAM_SENSOR
+//     ESP_LOGI(TAG, "DVP camera sensor I2C port=%d, scl_pin=%d, sda_pin=%d, freq=%d",
+//              EXAMPLE_DVP_SCCB_I2C_PORT,
+//              EXAMPLE_DVP_SCCB_I2C_SCL_PIN,
+//              EXAMPLE_DVP_SCCB_I2C_SDA_PIN,
+//              EXAMPLE_DVP_SCCB_I2C_FREQ);
+// #endif /* EXAMPLE_ENABLE_DVP_CAM_SENSOR */
+
+// #if EXAMPLE_ENABLE_SPI_CAM_0_SENSOR
+//     ESP_LOGI(TAG, "SPI camera sensor 0 I2C port=%d, scl_pin=%d, sda_pin=%d, freq=%d",
+//              EXAMPLE_SPI_CAM_0_SCCB_I2C_PORT,
+//              EXAMPLE_SPI_CAM_0_SCCB_I2C_SCL_PIN,
+//              EXAMPLE_SPI_CAM_0_SCCB_I2C_SDA_PIN,
+//              EXAMPLE_SPI_CAM_0_SCCB_I2C_FREQ);
+// #if EXAMPLE_ENABLE_SPI_CAM_1_SENSOR
+//     ESP_LOGI(TAG, "SPI camera sensor 1 I2C port=%d, scl_pin=%d, sda_pin=%d, freq=%d",
+//              EXAMPLE_SPI_CAM_1_SCCB_I2C_PORT,
+//              EXAMPLE_SPI_CAM_1_SCCB_I2C_SCL_PIN,
+//              EXAMPLE_SPI_CAM_1_SCCB_I2C_SDA_PIN,
+//              EXAMPLE_SPI_CAM_1_SCCB_I2C_FREQ);
+// #endif /* EXAMPLE_ENABLE_SPI_CAM_1_SENSOR */
+// #endif /* EXAMPLE_ENABLE_SPI_CAM_0_SENSOR */
+
+//     ESP_GOTO_ON_ERROR(esp_video_init(cam_config_ptr), failed_2, TAG, "failed to initialize video");
+
+//     s_is_init = true;
+
+//     return ESP_OK;
+
+
+// failed_2:
+// #if EXAMPLE_MIPI_CSI_XCLK_PIN > 0
+//     esp_cam_sensor_xclk_stop(s_xclk_handle);
+// failed_1:
+//     esp_cam_sensor_xclk_free(s_xclk_handle);
+//     s_xclk_handle = NULL;
+// failed_0:
+// #endif
+// #if CONFIG_EXAMPLE_SCCB_I2C_INIT_BY_APP
+//     i2c_del_master_bus(s_i2cbus_handle);
+//     s_i2cbus_handle = NULL;
+// #endif
+//     return ret;
+// }

@@ -19,6 +19,9 @@ static const char *TAG = "DF";
 #include "sdkconfig.h"
 #include "esp_check.h"
 #include "driver/gpio.h"
+#include "driver/uart.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -350,7 +353,7 @@ static lv_obj_t *lv_img = NULL;
 // pointCloudGrid: 0=空(白), 1=障碍(黑), 2=路径(红)
 #define ROWS 20
 #define COLS 32
-static const int pointCloudGrid[ROWS][COLS] = {
+static int pointCloudGrid[ROWS][COLS] = {
     {0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0},
     {0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0},
     {0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0},
@@ -374,6 +377,83 @@ static const int pointCloudGrid[ROWS][COLS] = {
 };
 static usb_msc_storage_t msc_ctrl;
 
+#define UART_PORT UART_NUM_1
+#define UART_TX_PIN GPIO_NUM_50
+#define UART_RX_PIN GPIO_NUM_49
+#define UART_BAUD_RATE 115200
+#define UART_FRAME_DATA_LEN (ROWS * COLS)
+
+static volatile bool s_grid_dirty = false;
+
+static void uart_init_49_50(void)
+{
+    uart_config_t uart_config = {
+        .baud_rate = UART_BAUD_RATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+
+    ESP_ERROR_CHECK(uart_driver_install(UART_PORT, 2048, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(UART_PORT, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(UART_PORT, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+}
+
+static void uart_rx_task(void *arg)
+{
+    (void)arg;
+
+    enum {
+        WAIT_HEAD = 0,
+        READ_PAYLOAD,
+        WAIT_TAIL,
+    } state = WAIT_HEAD;
+
+    uint8_t payload[UART_FRAME_DATA_LEN];
+    size_t payload_idx = 0;
+
+    while (1) {
+        uint8_t b = 0;
+        int n = uart_read_bytes(UART_PORT, &b, 1, pdMS_TO_TICKS(50));
+        if (n <= 0) {
+            continue;
+        }
+
+        switch (state) {
+        case WAIT_HEAD:
+            if (b == 0xF5) {
+                payload_idx = 0;
+                state = READ_PAYLOAD;
+            }
+            break;
+
+        case READ_PAYLOAD:
+            payload[payload_idx++] = b;
+            if (payload_idx >= UART_FRAME_DATA_LEN) {
+                state = WAIT_TAIL;
+            }
+            break;
+
+        case WAIT_TAIL:
+            if (b == 0xAF) {
+                for (int r = 0; r < ROWS; r++) {
+                    for (int c = 0; c < COLS; c++) {
+                        pointCloudGrid[r][c] = payload[r * COLS + c];
+                    }
+                }
+                s_grid_dirty = true;
+            }
+            state = WAIT_HEAD;
+            break;
+
+        default:
+            state = WAIT_HEAD;
+            break;
+        }
+    }
+}
 static void draw_point_cloud_grid(void)
 {
     // 蓝色线宽（像素），按实际视觉可调整
@@ -592,9 +672,23 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Initializing LVGL");
     ESP_UTILS_CHECK_FALSE_EXIT(lvgl_port_init(board->getLCD(), board->getTouch()), "LVGL init failed");
 
+    uart_init_49_50();
+    xTaskCreate(uart_rx_task, "uart_rx", 4096, NULL, 10, NULL);
+
     if (lvgl_port_lock(-1)) {
         draw_point_cloud_grid();
         lvgl_port_unlock();
+    }
+
+    while (1) {
+        if (s_grid_dirty) {
+            s_grid_dirty = false;
+            if (lvgl_port_lock(-1)) {
+                draw_point_cloud_grid();
+                lvgl_port_unlock();
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
 #if 0

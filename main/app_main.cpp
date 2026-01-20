@@ -603,7 +603,7 @@ static void draw_point_cloud_grid(void)
             lv_canvas_draw_polygon(canvas, points, 4, &rect_dsc);
         }
     }
-    // 绘制最后一行到画布底部的多边形
+    // 补绘制最后一行到画布底部的多边形
     if (valid[ROWS - 1]) {  // 确保最后一行有效
         lv_point_t bottom_poly[] = {
             left_pts[ROWS - 1],           // 最后一行左边点
@@ -642,6 +642,13 @@ static void draw_point_cloud_grid(void)
         last_left = cur_left;
         last_right = cur_right;
     }
+    /*补线*/
+    lv_point_t pts_c[2] = {center_pts[ROWS - 1], {0,center_pts[ROWS - 1].y}};
+    lv_point_t pts_l[2] = {left_pts[ROWS - 1], {0, left_pts[ROWS - 1].y}};
+    lv_point_t pts_r[2] = { right_pts[ROWS - 1], {0, right_pts[ROWS - 1].y }};
+    lv_canvas_draw_line(canvas, pts_c, 2, &line_dsc);
+    lv_canvas_draw_line(canvas, pts_l, 2, &line_dsc);
+    lv_canvas_draw_line(canvas, pts_r, 2, &line_dsc);
 }
 
 extern "C" void app_main(void)

@@ -4,4 +4,5 @@ cmake_minimum_required(VERSION 3.5)
 
 add_compile_options(-fdiagnostics-color=always)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+include_directories(${CMAKE_CURRENT_LIST_DIR}/main/conf)
 project(K20_IDF)

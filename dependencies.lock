@@ -1,6 +1,5 @@
 dependencies:
   ESP32_Display_Panel:
-    component_hash: 5b701ecce867dc5a513bc6ce74c8b675df6142fcce874ffeceaf9359fb9ed674
     dependencies:
     - name: idf
       version: '>=5.1'
@@ -11,10 +10,9 @@ dependencies:
       public: true
       version: 1.*
     source:
-      git: https://github.com/cdjq/ESP32_Display_Panel.git
-      path: .
-      type: git
-    version: 3718de23d91893228b5cad65aa453ba5ce78f7e9
+      path: C:\Users\USER\Desktop\K20\K20_IDF\managed_components\ESP32_Display_Panel
+      type: local
+    version: 1.0.4
   espressif/cmake_utilities:
     component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
     dependencies:
@@ -325,6 +323,6 @@ direct_dependencies:
 - espressif/esp_video
 - example_video_common
 - lvgl/lvgl
-manifest_hash: b3b33716fd85d109444f8b09240cac615bcda4a5965d7324a999f2a461eef06c
+manifest_hash: d13c7cf8135725d981750e75eb57f9c241d2c145d6617cce3032dc282e97de13
 target: esp32p4
 version: 2.0.0

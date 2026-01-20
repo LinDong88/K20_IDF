@@ -15,11 +15,13 @@ dependencies:
 
   lvgl/lvgl:
     version: "^8"
-  example_video_common:
-    path: "../managed_components/espressif__esp_video/examples/common_components/example_video_common"
 
 
-  ESP32_Display_Panel:
-    git: https://github.com/cdjq/ESP32_Display_Panel.git
   # ESP32_Display_Panel:
-  #   path: ../managed_components/ESP32_Display_Panel
+  #   git: https://github.com/cdjq/ESP32_Display_Panel.git
+  ESP32_Display_Panel:
+    path: ../managed_components/ESP32_Display_Panel
+
+  example_video_common:
+    override_path: "../managed_components/espressif__esp_video/examples/common_components/example_video_common"
+

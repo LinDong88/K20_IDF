@@ -12,5 +12,5 @@
     "--compile-commands-dir=c:\\Users\\USER\\Desktop\\K20\\human_face_detect_p4\\build"
   ],
   "idf.flashType": "UART",
-  "idf.portWin": "COM3"
+  "idf.portWin": "COM35"
 }

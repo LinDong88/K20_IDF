@@ -11,3 +11,4 @@ elseif (IDF_TARGET STREQUAL "esp32p4")
 endif()
 
 idf_component_register(SRC_DIRS ${src_dirs} INCLUDE_DIRS ${include_dirs}  )
+

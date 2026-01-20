@@ -344,10 +344,225 @@ size_t frame_buffer_size = 0;
 static lv_img_dsc_t img_dsc;
 static lv_obj_t *lv_img = NULL;
 
-#define DISP_HRES 400
-#define DISP_VRES 400
+#define DISP_HRES 480
+#define DISP_VRES 800
 
+// pointCloudGrid: 0=空(白), 1=障碍(黑), 2=路径(红)
+#define ROWS 20
+#define COLS 32
+static const int pointCloudGrid[ROWS][COLS] = {
+    {0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,2,2,2,2,2,2,2,2,2,2,2,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,2,2,2,2,2,2,2,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,2,2,2,2,2,2,2,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,2,2,2,2,2,2,2,0,0,0,0,1,1,1,1,1,0,0,0,1,0,0,0,0,1,1,0,1,1,0,0},
+    {2,2,2,2,2,2,2,0,0,0,0,0,1,1,1,1,1,1,0,1,1,0,0,0,0,1,1,1,1,1,1,0},
+    {2,2,2,2,2,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,0,0,0,0,1,1,1,1,1,1,1},
+    {2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,0,0,1,1,1,1,1,1,1},
+    {2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1},
+    {2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1},
+    {2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1}
+};
 static usb_msc_storage_t msc_ctrl;
+
+static void draw_point_cloud_grid(void)
+{
+    // 蓝色线宽（像素），按实际视觉可调整
+    const int line_w = 3;
+    lv_obj_t *scr = lv_scr_act();
+
+    // 旋转90°后：显示维度为 (ROWS x COLS)
+    // 为了尽可能填满屏幕，这里允许非正方形格子：分别计算 cell_w / cell_h
+    int cell_w = DISP_HRES / ROWS;
+    int cell_h = DISP_VRES / COLS;
+    if (cell_w < 1) {
+        cell_w = 1;
+    }
+    if (cell_h < 1) {
+        cell_h = 1;
+    }
+
+    const int grid_w = cell_w * ROWS;
+    const int grid_h = cell_h * COLS;
+
+    static lv_obj_t *canvas = NULL;
+    static uint8_t *canvas_buf = NULL;
+
+    if (canvas == NULL) {
+        canvas = lv_canvas_create(scr);
+        lv_obj_clear_flag(canvas, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(canvas, grid_w, grid_h);
+        lv_obj_center(canvas);
+
+        size_t buf_size = LV_CANVAS_BUF_SIZE_TRUE_COLOR(grid_w, grid_h);
+        canvas_buf = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (canvas_buf == NULL) {
+            // fallback to default heap
+            canvas_buf = (uint8_t *)malloc(buf_size);
+        }
+        if (canvas_buf == NULL) {
+            return;
+        }
+        lv_canvas_set_buffer(canvas, canvas_buf, grid_w, grid_h, LV_IMG_CF_TRUE_COLOR);
+    } else {
+        lv_obj_set_size(canvas, grid_w, grid_h);
+        lv_obj_center(canvas);
+    }
+
+    // 先清屏为黑色
+    lv_canvas_fill_bg(canvas, lv_color_black(), LV_OPA_COVER);
+
+    lv_draw_rect_dsc_t rect_dsc;
+    lv_draw_rect_dsc_init(&rect_dsc);
+    rect_dsc.border_width = 0;
+    rect_dsc.radius = 0;
+    rect_dsc.bg_opa = LV_OPA_COVER;
+
+    for (int r = 0; r < ROWS; r++) {
+        for (int c = 0; c < COLS; c++) {
+            int v = pointCloudGrid[r][c];
+            if (v == 0) {
+                rect_dsc.bg_color = lv_color_black();
+            } else if (v == 1) {
+                rect_dsc.bg_color = lv_color_white();
+            } else {
+                // rect_dsc.bg_color = lv_color_make(0xFF, 0x00, 0x00);
+            }
+
+            // 旋转90°顺时针：src(r,c) -> dst(x,y)
+            // dst_col = ROWS - 1 - r
+            // dst_row = c
+            const int dst_col = ROWS - 1 - r;
+            const int dst_row = c;
+
+            const int x1 = dst_col * cell_w;
+            const int y1 = dst_row * cell_h;
+            lv_canvas_draw_rect(canvas, x1, y1, cell_w, cell_h, &rect_dsc);
+        }
+    }
+
+
+    // --- 在路径上绘制更顺滑的中心线和边界线 ---
+    lv_draw_line_dsc_t line_dsc;
+    lv_draw_line_dsc_init(&line_dsc);
+    line_dsc.color = lv_color_make(0x00, 0x00, 0xFF);
+    line_dsc.width = line_w;
+    line_dsc.round_start = 1;
+    line_dsc.round_end = 1;
+
+    // 收集每一行路径段的中心/左右点，然后做简单平滑（3点移动平均）再连线
+    lv_point_t center_pts[ROWS];
+    lv_point_t left_pts[ROWS];
+    lv_point_t right_pts[ROWS];
+    uint8_t valid[ROWS] = {0};
+
+    for (int r = 0; r < ROWS; r++) {
+        int min_c = -1, max_c = -1;
+        for (int c = 0; c < COLS; c++) {
+            if (pointCloudGrid[r][c] == 2) {
+                if (min_c < 0) min_c = c;
+                max_c = c;
+            }
+        }
+        if (min_c < 0) {
+            continue;
+        }
+
+        const int dst_col_base = ROWS  - r;
+        const float center_c = (min_c + max_c) * 0.5f;
+
+        center_pts[r].x = (lv_coord_t)(dst_col_base * cell_w );
+        center_pts[r].y = (lv_coord_t)(center_c * cell_h );
+
+        // 这里的"左右边界"是在当前坐标系下对路径段上下边界连线，确保连续
+        left_pts[r].x = (lv_coord_t)(dst_col_base * cell_w );
+        left_pts[r].y = (lv_coord_t)(min_c * cell_h);
+
+        right_pts[r].x = (lv_coord_t)(dst_col_base * cell_w );
+        right_pts[r].y = (lv_coord_t)(max_c * cell_h);
+
+        valid[r] = 1;
+    }
+
+    auto smooth3 = [](lv_point_t *pts, const uint8_t *v, int n) {
+        for (int i = 1; i < n - 1; i++) {
+            if (!v[i - 1] || !v[i] || !v[i + 1]) continue;
+            pts[i].x = (lv_coord_t)((pts[i - 1].x + pts[i].x + pts[i + 1].x) / 3);
+            pts[i].y = (lv_coord_t)((pts[i - 1].y + pts[i].y + pts[i + 1].y) / 3);
+        }
+    };
+
+    smooth3(center_pts, valid, ROWS);
+    smooth3(left_pts, valid, ROWS);
+    smooth3(right_pts, valid, ROWS);
+
+    // 绘制由四个点构成的多边形（连接相邻行的路径边界）
+    for (int r = 0; r < ROWS - 1; r++) {
+        if (valid[r] && valid[r + 1]) {
+            // 定义四个点构成的多边形
+            lv_point_t points[] = {
+                left_pts[r],      // 当前行左边点
+                right_pts[r],     // 当前行右边点
+                right_pts[r + 1], // 下一行右边点
+                left_pts[r + 1]   // 下一行左边点
+            };
+
+            // 设置红色填充
+            rect_dsc.bg_color = lv_color_make(0xFF, 0x00, 0x00);
+
+            // 绘制红色多边形
+            lv_canvas_draw_polygon(canvas, points, 4, &rect_dsc);
+        }
+    }
+    // 绘制最后一行到画布底部的多边形
+    if (valid[ROWS - 1]) {  // 确保最后一行有效
+        lv_point_t bottom_poly[] = {
+            left_pts[ROWS - 1],           // 最后一行左边点
+            right_pts[ROWS - 1],          // 最后一行右边点
+            {0, right_pts[ROWS - 1].y }, // 
+            {0, left_pts[ROWS - 1].y}   // 
+        };
+        
+        // 设置红色填充
+        rect_dsc.bg_color = lv_color_make(0xFF, 0x00, 0x00);
+        // 绘制红色多边形到边框
+        lv_canvas_draw_polygon(canvas, bottom_poly, 4, &rect_dsc);
+    }
+
+    lv_point_t last_center = {-1, -1};
+    lv_point_t last_left = {-1, -1};
+    lv_point_t last_right = {-1, -1};
+
+    for (int r = 0; r < ROWS; r++) {
+        if (!valid[r]) continue;
+
+        lv_point_t cur_center = center_pts[r];
+        lv_point_t cur_left = left_pts[r];
+        lv_point_t cur_right = right_pts[r];
+
+        if (last_center.x != -1) {
+            lv_point_t pts_c[2] = {last_center, cur_center};
+            lv_point_t pts_l[2] = {last_left, cur_left};
+            lv_point_t pts_r[2] = {last_right, cur_right};
+            lv_canvas_draw_line(canvas, pts_c, 2, &line_dsc);
+            lv_canvas_draw_line(canvas, pts_l, 2, &line_dsc);
+            lv_canvas_draw_line(canvas, pts_r, 2, &line_dsc);
+        }
+
+        last_center = cur_center;
+        last_left = cur_left;
+        last_right = cur_right;
+    }
+}
 
 extern "C" void app_main(void)
 {
@@ -377,6 +592,12 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Initializing LVGL");
     ESP_UTILS_CHECK_FALSE_EXIT(lvgl_port_init(board->getLCD(), board->getTouch()), "LVGL init failed");
 
+    if (lvgl_port_lock(-1)) {
+        draw_point_cloud_grid();
+        lvgl_port_unlock();
+    }
+
+#if 0
     // 初始化图像描述符
     img_dsc.header.always_zero = 0;
     img_dsc.header.w = DISP_HRES;
@@ -451,4 +672,5 @@ extern "C" void app_main(void)
         example_video_fb_return(&msc_ctrl);
         vTaskDelay(pdMS_TO_TICKS(1));
     }
+#endif
 }

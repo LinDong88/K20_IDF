@@ -26,7 +26,7 @@ static const char *TAG = "DF";
 #include "esp_err.h"
 #include "esp_log.h"
 #include "example_video_common.h"
-
+#include <cmath>
 #define CONFIG_EXAMPLE_FORMAT_NON_ENCODE 1
 
 #if CONFIG_EXAMPLE_FORMAT_MJPEG
@@ -454,97 +454,60 @@ static void uart_rx_task(void *arg)
         }
     }
 }
+#include <math.h> // 用于计算箭头旋转角度
+
+#include <math.h>
+
+#include <math.h>
+
+// --- 增强配色与可见度 ---
+#define COLOR_BG            lv_color_make(5, 10, 20)      
+#define COLOR_ROAD_SURFACE  lv_color_make(15, 35, 55)     
+#define COLOR_ROAD_BORDER   lv_color_make(0, 255, 255)    
+#define COLOR_CENTER_LINE   lv_color_make(200, 255, 255)  
+#define COLOR_OBSTACLE      lv_color_make(220, 40, 40)    
+#define COLOR_SCANLINE      lv_color_make(255, 255, 255)  // 提高扫描线可见度
+#define COLOR_ARROW         lv_color_make(0, 255, 150)    
+
 static void draw_point_cloud_grid(void)
 {
-    // 蓝色线宽（像素），按实际视觉可调整
-    const int line_w = 3;
     lv_obj_t *scr = lv_scr_act();
-
-    // 旋转90°后：显示维度为 (ROWS x COLS)
-    // 为了尽可能填满屏幕，这里允许非正方形格子：分别计算 cell_w / cell_h
+    // 强制填满屏幕：计算 cell 时不留余数
     int cell_w = DISP_HRES / ROWS;
     int cell_h = DISP_VRES / COLS;
-    if (cell_w < 1) {
-        cell_w = 1;
-    }
-    if (cell_h < 1) {
-        cell_h = 1;
-    }
-
-    const int grid_w = cell_w * ROWS;
-    const int grid_h = cell_h * COLS;
+    const int grid_w = DISP_HRES; // 直接使用屏幕分辨率
+    const int grid_h = DISP_VRES;
 
     static lv_obj_t *canvas = NULL;
     static uint8_t *canvas_buf = NULL;
 
     if (canvas == NULL) {
         canvas = lv_canvas_create(scr);
-        lv_obj_clear_flag(canvas, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_size(canvas, grid_w, grid_h);
         lv_obj_center(canvas);
-
         size_t buf_size = LV_CANVAS_BUF_SIZE_TRUE_COLOR(grid_w, grid_h);
-        canvas_buf = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        if (canvas_buf == NULL) {
-            // fallback to default heap
-            canvas_buf = (uint8_t *)malloc(buf_size);
-        }
-        if (canvas_buf == NULL) {
-            return;
-        }
+        canvas_buf = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         lv_canvas_set_buffer(canvas, canvas_buf, grid_w, grid_h, LV_IMG_CF_TRUE_COLOR);
-    } else {
-        lv_obj_set_size(canvas, grid_w, grid_h);
-        lv_obj_center(canvas);
     }
 
-    // 先清屏为黑色
-    lv_canvas_fill_bg(canvas, lv_color_black(), LV_OPA_COVER);
-
-    lv_draw_rect_dsc_t rect_dsc;
-    lv_draw_rect_dsc_init(&rect_dsc);
-    rect_dsc.border_width = 0;
-    rect_dsc.radius = 0;
-    rect_dsc.bg_opa = LV_OPA_COVER;
-
+    // 1. 背景与障碍物
+    lv_canvas_fill_bg(canvas, COLOR_BG, LV_OPA_COVER);
+    lv_draw_rect_dsc_t obs_dsc;
+    lv_draw_rect_dsc_init(&obs_dsc);
+    obs_dsc.bg_color = COLOR_OBSTACLE;
+    obs_dsc.bg_opa = LV_OPA_60;
     for (int r = 0; r < ROWS; r++) {
         for (int c = 0; c < COLS; c++) {
-            int v = pointCloudGrid[r][c];
-            if (v == 0) {
-                rect_dsc.bg_color = lv_color_black();
-            } else if (v == 1) {
-                rect_dsc.bg_color = lv_color_white();
-            } else {
-                // rect_dsc.bg_color = lv_color_make(0xFF, 0x00, 0x00);
+            if (pointCloudGrid[r][c] == 1) {
+                // 绘制时也填满格点
+                lv_canvas_draw_rect(canvas, (ROWS-1-r)*cell_w, c*cell_h, cell_w, cell_h, &obs_dsc);
             }
-
-            // 旋转90°顺时针：src(r,c) -> dst(x,y)
-            // dst_col = ROWS - 1 - r
-            // dst_row = c
-            const int dst_col = ROWS - 1 - r;
-            const int dst_row = c;
-
-            const int x1 = dst_col * cell_w;
-            const int y1 = dst_row * cell_h;
-            lv_canvas_draw_rect(canvas, x1, y1, cell_w, cell_h, &rect_dsc);
         }
     }
 
-
-    // --- 在路径上绘制更顺滑的中心线和边界线 ---
-    lv_draw_line_dsc_t line_dsc;
-    lv_draw_line_dsc_init(&line_dsc);
-    line_dsc.color = lv_color_make(0x00, 0x00, 0xFF);
-    line_dsc.width = line_w;
-    line_dsc.round_start = 1;
-    line_dsc.round_end = 1;
-
-    // 收集每一行路径段的中心/左右点，然后做简单平滑（3点移动平均）再连线
-    lv_point_t center_pts[ROWS];
-    lv_point_t left_pts[ROWS];
-    lv_point_t right_pts[ROWS];
+    // 2. 路径数据提取 (ROWS=20, 包含索引 0-19)
+    lv_point_t l_pts[ROWS], r_pts[ROWS], c_pts[ROWS];
     uint8_t valid[ROWS] = {0};
-
     for (int r = 0; r < ROWS; r++) {
         int min_c = -1, max_c = -1;
         for (int c = 0; c < COLS; c++) {
@@ -553,102 +516,111 @@ static void draw_point_cloud_grid(void)
                 max_c = c;
             }
         }
-        if (min_c < 0) {
-            continue;
-        }
-
-        const int dst_col_base = ROWS  - r;
-        const float center_c = (min_c + max_c) * 0.5f;
-
-        center_pts[r].x = (lv_coord_t)(dst_col_base * cell_w );
-        center_pts[r].y = (lv_coord_t)(center_c * cell_h );
-
-        // 这里的"左右边界"是在当前坐标系下对路径段上下边界连线，确保连续
-        left_pts[r].x = (lv_coord_t)(dst_col_base * cell_w );
-        left_pts[r].y = (lv_coord_t)(min_c * cell_h);
-
-        right_pts[r].x = (lv_coord_t)(dst_col_base * cell_w );
-        right_pts[r].y = (lv_coord_t)(max_c * cell_h);
-
-        valid[r] = 1;
-    }
-
-    auto smooth3 = [](lv_point_t *pts, const uint8_t *v, int n) {
-        for (int i = 1; i < n - 1; i++) {
-            if (!v[i - 1] || !v[i] || !v[i + 1]) continue;
-            pts[i].x = (lv_coord_t)((pts[i - 1].x + pts[i].x + pts[i + 1].x) / 3);
-            pts[i].y = (lv_coord_t)((pts[i - 1].y + pts[i].y + pts[i + 1].y) / 3);
-        }
-    };
-
-    smooth3(center_pts, valid, ROWS);
-    smooth3(left_pts, valid, ROWS);
-    smooth3(right_pts, valid, ROWS);
-
-    // 绘制由四个点构成的多边形（连接相邻行的路径边界）
-    for (int r = 0; r < ROWS - 1; r++) {
-        if (valid[r] && valid[r + 1]) {
-            // 定义四个点构成的多边形
-            lv_point_t points[] = {
-                left_pts[r],      // 当前行左边点
-                right_pts[r],     // 当前行右边点
-                right_pts[r + 1], // 下一行右边点
-                left_pts[r + 1]   // 下一行左边点
-            };
-
-            // 设置红色填充
-            rect_dsc.bg_color = lv_color_make(0xFF, 0x00, 0x00);
-
-            // 绘制红色多边形
-            lv_canvas_draw_polygon(canvas, points, 4, &rect_dsc);
+        if (min_c >= 0) {
+            const int x = (ROWS-1-r)*cell_w + cell_w/2; // 取格子中心
+            l_pts[r] = { (lv_coord_t)(x - cell_w/2), (lv_coord_t)(min_c * cell_h) };
+            r_pts[r] = { (lv_coord_t)(x + cell_w/2), (lv_coord_t)((max_c + 1) * cell_h) };
+            c_pts[r] = { (lv_coord_t)x, (lv_coord_t)((min_c + max_c + 1) * cell_h / 2) };
+            valid[r] = 1;
         }
     }
-    // 补绘制最后一行到画布底部的多边形
-    if (valid[ROWS - 1]) {  // 确保最后一行有效
-        lv_point_t bottom_poly[] = {
-            left_pts[ROWS - 1],           // 最后一行左边点
-            right_pts[ROWS - 1],          // 最后一行右边点
-            {0, right_pts[ROWS - 1].y }, // 
-            {0, left_pts[ROWS - 1].y}   // 
-        };
+
+    // 3. 3点平滑优化
+    for (int i = 1; i < ROWS - 1; i++) {
+        if (valid[i-1] && valid[i] && valid[i+1]) {
+            l_pts[i].y = (l_pts[i-1].y + l_pts[i].y + l_pts[i+1].y) / 3;
+            r_pts[i].y = (r_pts[i-1].y + r_pts[i].y + r_pts[i+1].y) / 3;
+            c_pts[i].y = (c_pts[i-1].y + c_pts[i].y + c_pts[i+1].y) / 3;
+        }
+    }
+
+    // --- 重点改进：延申到左右边界 ---
+    // 右边界延申 (r=0 处)
+    if (valid[0]) {
+        lv_point_t edge_l = { (lv_coord_t)grid_w, l_pts[0].y };
+        lv_point_t edge_r = { (lv_coord_t)grid_w, r_pts[0].y };
+        lv_draw_rect_dsc_t rdsc; lv_draw_rect_dsc_init(&rdsc);
+        rdsc.bg_color = COLOR_ROAD_SURFACE; rdsc.bg_opa = LV_OPA_COVER;
+        lv_point_t poly[4] = { l_pts[0], r_pts[0], edge_r, edge_l };
+        lv_canvas_draw_polygon(canvas, poly, 4, &rdsc);
+    }
+    // 左边界延申 (r=19 处)
+    if (valid[ROWS-1]) {
+        lv_point_t edge_l = { 0, l_pts[ROWS-1].y };
+        lv_point_t edge_r = { 0, r_pts[ROWS-1].y };
+        lv_draw_rect_dsc_t rdsc; lv_draw_rect_dsc_init(&rdsc);
+        rdsc.bg_color = COLOR_ROAD_SURFACE; rdsc.bg_opa = LV_OPA_COVER;
+        lv_point_t poly[4] = { l_pts[ROWS-1], r_pts[ROWS-1], edge_r, edge_l };
+        lv_canvas_draw_polygon(canvas, poly, 4, &rdsc);
+    }
+
+    // 4. 绘制主体路面
+    lv_draw_rect_dsc_t road_dsc;
+    lv_draw_rect_dsc_init(&road_dsc);
+    road_dsc.bg_color = COLOR_ROAD_SURFACE; road_dsc.bg_opa = LV_OPA_COVER;
+    for (int i = 0; i < ROWS - 1; i++) {
+        if (valid[i] && valid[i+1]) {
+            lv_point_t poly[4] = { l_pts[i], r_pts[i], r_pts[i+1], l_pts[i+1] };
+            lv_canvas_draw_polygon(canvas, poly, 4, &road_dsc);
+        }
+    }
+
+    // 5. 绘制连续边界线 (含边界延申线)
+    lv_draw_line_dsc_t line_dsc;
+    lv_draw_line_dsc_init(&line_dsc);
+    line_dsc.color = COLOR_ROAD_BORDER; line_dsc.width = 3; line_dsc.round_start = 1; line_dsc.round_end = 1;
+
+    // 补画边界到屏幕边缘的线
+    if(valid[0]) {
+        lv_point_t seg_l[2] = {l_pts[0], {(lv_coord_t)grid_w, l_pts[0].y}};
+        lv_point_t seg_r[2] = {r_pts[0], {(lv_coord_t)grid_w, r_pts[0].y}};
+        lv_canvas_draw_line(canvas, seg_l, 2, &line_dsc); lv_canvas_draw_line(canvas, seg_r, 2, &line_dsc);
+    }
+    if(valid[ROWS-1]) {
+        lv_point_t seg_l[2] = {l_pts[ROWS-1], {0, l_pts[ROWS-1].y}};
+        lv_point_t seg_r[2] = {r_pts[ROWS-1], {0, r_pts[ROWS-1].y}};
+        lv_canvas_draw_line(canvas, seg_l, 2, &line_dsc); lv_canvas_draw_line(canvas, seg_r, 2, &line_dsc);
+    }
+
+    for (int i = 0; i < ROWS - 1; i++) {
+        if (!valid[i] || !valid[i+1]) continue;
+        line_dsc.color = COLOR_ROAD_BORDER; line_dsc.width = 3;
+        lv_point_t sl[2] = {l_pts[i], l_pts[i+1]}, sr[2] = {r_pts[i], r_pts[i+1]};
+        lv_canvas_draw_line(canvas, sl, 2, &line_dsc); lv_canvas_draw_line(canvas, sr, 2, &line_dsc);
         
-        // 设置红色填充
-        rect_dsc.bg_color = lv_color_make(0xFF, 0x00, 0x00);
-        // 绘制红色多边形到边框
-        lv_canvas_draw_polygon(canvas, bottom_poly, 4, &rect_dsc);
-    }
-
-    lv_point_t last_center = {-1, -1};
-    lv_point_t last_left = {-1, -1};
-    lv_point_t last_right = {-1, -1};
-
-    for (int r = 0; r < ROWS; r++) {
-        if (!valid[r]) continue;
-
-        lv_point_t cur_center = center_pts[r];
-        lv_point_t cur_left = left_pts[r];
-        lv_point_t cur_right = right_pts[r];
-
-        if (last_center.x != -1) {
-            lv_point_t pts_c[2] = {last_center, cur_center};
-            lv_point_t pts_l[2] = {last_left, cur_left};
-            lv_point_t pts_r[2] = {last_right, cur_right};
-            lv_canvas_draw_line(canvas, pts_c, 2, &line_dsc);
-            lv_canvas_draw_line(canvas, pts_l, 2, &line_dsc);
-            lv_canvas_draw_line(canvas, pts_r, 2, &line_dsc);
+        if (i % 2 == 0) { // 中心虚线
+            line_dsc.color = COLOR_CENTER_LINE; line_dsc.width = 1;
+            lv_point_t sc[2] = {c_pts[i], c_pts[i+1]};
+            lv_canvas_draw_line(canvas, sc, 2, &line_dsc);
         }
-
-        last_center = cur_center;
-        last_left = cur_left;
-        last_right = cur_right;
     }
-    /*补线*/
-    lv_point_t pts_c[2] = {center_pts[ROWS - 1], {0,center_pts[ROWS - 1].y}};
-    lv_point_t pts_l[2] = {left_pts[ROWS - 1], {0, left_pts[ROWS - 1].y}};
-    lv_point_t pts_r[2] = { right_pts[ROWS - 1], {0, right_pts[ROWS - 1].y }};
-    lv_canvas_draw_line(canvas, pts_c, 2, &line_dsc);
-    lv_canvas_draw_line(canvas, pts_l, 2, &line_dsc);
-    lv_canvas_draw_line(canvas, pts_r, 2, &line_dsc);
+
+    // 6. 起点箭头绘制 (改为在最右侧延申段绘制)
+    int start_idx = -1;
+    for(int i=0; i<ROWS; i++) if(valid[i]) { start_idx = i; break; }
+    if (start_idx != -1) {
+        lv_point_t head_p = {(lv_coord_t)(grid_w - 15), c_pts[start_idx].y};
+        lv_point_t arrow[3] = {
+            { (lv_coord_t)(head_p.x + 12), head_p.y },
+            { (lv_coord_t)(head_p.x - 8), (lv_coord_t)(head_p.y - 8) },
+            { (lv_coord_t)(head_p.x - 8), (lv_coord_t)(head_p.y + 8) }
+        };
+        lv_draw_rect_dsc_t adsc; lv_draw_rect_dsc_init(&adsc);
+        adsc.bg_color = COLOR_ARROW; adsc.shadow_width = 10; adsc.shadow_color = COLOR_ARROW;
+        lv_canvas_draw_polygon(canvas, arrow, 3, &adsc);
+    }
+
+    // 7. CRT 扫描线 (加强版：提高透明度)
+    lv_draw_line_dsc_t scan_dsc;
+    lv_draw_line_dsc_init(&scan_dsc);
+    scan_dsc.color = COLOR_SCANLINE;
+    scan_dsc.width = 1;
+    scan_dsc.opa = 35; // 提高到 35，确保 RGB565 下清晰可见
+
+    for (int y = 0; y < grid_h; y += 4) {
+        lv_point_t sl[2] = {{0, (lv_coord_t)y}, {(lv_coord_t)grid_w, (lv_coord_t)y}};
+        lv_canvas_draw_line(canvas, sl, 2, &scan_dsc);
+    }
 }
 
 extern "C" void app_main(void)
